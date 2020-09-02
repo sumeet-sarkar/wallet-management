@@ -1,0 +1,17 @@
+.global_nav{
+    height: 64px;
+    width: 100%;
+    background-color: #283e4a;
+    top:0px;
+    position: absolute;
+}
+
+.user{
+    height: 48px;
+    width: 128px;
+    margin: 8px;
+    position: fixed;
+    right: 32px;
+    color: white;
+    text-align: bottom;
+}
