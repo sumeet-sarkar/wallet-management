@@ -24,8 +24,6 @@ class Header extends Component{
     }
 
     render() {
-        console.log(this.props.ctr)
-        console.log(this.props.storedResults)
         return(
             <div className="global_nav">
                 <div className="user">

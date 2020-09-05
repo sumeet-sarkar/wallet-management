@@ -1,8 +1,7 @@
 import React from 'react';
-import logo from './logo.svg';
 import './App.css';
 import Header from './container/Header';
-import Cards from './container/Cards';
+import Accounts from './container/Accounts';
 import {BrowserRouter, Route} from 'react-router-dom';
 import Transactions from './container/Transactions';
 
@@ -11,7 +10,7 @@ function App() {
     <BrowserRouter>
       <div className="App">
         <Route path="/" component={Header}/>
-        <Route path="/" exact component={Cards}/>
+        <Route path="/" exact component={Accounts}/>
         <Route path="/transactions" exact component={Transactions}/>
       </div>
     </BrowserRouter>

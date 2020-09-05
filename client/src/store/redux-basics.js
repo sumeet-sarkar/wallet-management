@@ -8,7 +8,6 @@ const initialState = {
     transactions: []
 }
 
-//reducer
 const reducer = (state = initialState, action) => {
     switch ( action.type ) {
         case actionTypes.INC_COUNTER:
@@ -17,7 +16,6 @@ const reducer = (state = initialState, action) => {
                 counter: state.counter + 1
             }
         case actionTypes.SET_TRANSACTIONS_WITH_ACCOUNT:
-            console.log("twa ", action.accountId)
             return {
                 ...state,
                 transactionsWithAccount: action.accountId
@@ -40,7 +38,6 @@ const reducer = (state = initialState, action) => {
             })
             return {
                 ...state,
-                //accounts: state.accounts.concat(action.payload)
                 accounts: updatedAccounts
             }
         case actionTypes.GET_TRANSACTIONS:
@@ -58,19 +55,3 @@ const reducer = (state = initialState, action) => {
 }
 
 export default reducer;
-
-/*
-//store
-const store = createStore(rootReducer);
-
-
-//subscription
-store.subscribe(() => {
-    console.log('[Subscription', store.getState())
-});
-
-// dispatching action
-store.dispatch({type: "INC_COUNTER"});
-store.dispatch({type: "ADD_COUNTER", value: 10});
-console.log(store.getState());
-*/

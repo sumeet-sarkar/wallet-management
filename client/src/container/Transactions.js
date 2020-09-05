@@ -2,17 +2,24 @@ import React, { Component } from 'react'
 import axios from 'axios'
 import * as actionTypes from '../store/actions'
 import {connect} from 'react-redux'
-import Transactions from '../component/transactions'
+import Rows from '../component/rows'
+import Popup from './Popup'
 
 class TransactionsHander extends Component{
 
     state = {
-        amount: null
+        showModal: false,
+        modal: {
+            info: null,
+            title: null,
+            rows: null,
+            actionButtonName: null,
+            cancelButtonName: null
+        }
     }
 
     componentDidMount = () => {
-        //const url = "http://localhost:8000/wallet/transactions/?accountid=" + this.props.accountId
-        const url = "http://localhost:8000/wallet/transactions/?accountid=1"
+        const url = "http://localhost:8000/wallet/transactions/?accountid=" + this.props.accountId
         axios.get(url)
             .then(response => {
                 return response.data
@@ -29,46 +36,77 @@ class TransactionsHander extends Component{
             })
     }
 
-    editAmount = (event, index) => {
+    closeModal = () => {
+        this.setState({
+            showModal: false,
+            modal: null
+        })
+    }
+
+    showModal = (data, action) => {
+        this.setState({
+            showModal:true,
+            modal: { 
+                info: data,
+                title: `${action} this transaction?`,
+                actionButtonName: action,
+                cancelButtonName: "Cancel",
+                rows: [{
+                        inputName: "amountSpent",
+                        inputType: "number",
+                        inputValue: data.amountSpent,
+                    },
+                    {
+                        inputName: "reason",
+                        inputType: "text",
+                        inputValue: data.reason,
+                    }
+                ]
+            }
+        })
+    }
+
+    editTransaction = (data) => {
         const url = "http://localhost:8000/wallet/transactions/"
         const body = {
-            "id": "28",
-            "accountNumber": "1",
-            "amountSpent": 20.0,
+            "id": data.id,
+            "accountNumber": data.accountNumber,
+            "amountSpent": parseFloat(data.amountSpent),
+            "reason": data.reason
         }
         axios.put(url, body)
             .then(response => {
                 return response.status
             })
-            .then(result => (
-                //console.log(result)
-                this.componentDidMount()
+            .then(() => (
+                this.componentDidMount(),
+                this.closeModal()
             ))
             .catch(error => {
                 alert(error)
+                this.closeModal()
             })
     }
 
+    doNothing = () => {
+    }
+
     render() {
-        console.log("state = ",this.props)
         return(
             <div className="cards_handler">
-                {this.props.transactions.map((transaction,index) => {
-                    return (
-                        <Transactions
-                            id = {transaction.id}
-                            amountSpent = {transaction.amountSpent}
-                            closingBalance = {transaction.closingBalance}
-                            reason = {transaction.reason}
-                            date = {transaction.date}
-                            createdOn = {transaction.createdOn}
-                            lastModified = {transaction.lastModified}
-                            isDeleted = {transaction.isDeleted}
-                            showTransactions = {() => this.showTransactions(index)}
-                            editAmount = {(event) => this.editAmount(event,index)}
-                        />
-                    )
-                })}
+                <Rows
+                    columnNames = {["id", "amountSpent", "closingBalance", "reason", "date"]}
+                    dataRows = {this.props.transactions}
+                    rowClicked = {this.doNothing}
+                    performAction = {(data,action) => this.showModal(data, action)}
+                />
+                {this.state.showModal?
+                    <Popup
+                        modal = {this.state.modal}
+                        cancelButton = {this.closeModal}
+                        actionButton = { data => this.editTransaction(data) }
+                    />:null
+                }
             </div>
         )
     }
