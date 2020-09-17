@@ -80,6 +80,32 @@ class AccountAPIView(APIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def delete(self, request):
+        statusMessage = self.getAccounts(request.query_params)
+        if statusMessage == True:
+            transactions = TransactionAPIView()
+            # account in model.Transaction is id in model.Account
+            # statusMessageTransactions unused variable because existing method is reused
+            statusMessageTransactions = transactions.getTransactions( {"account": self.accounts[0].id} )
+            with TRANSACTION.atomic():
+                for transaction in transactions.transactions:
+                    transaction.isDeleted = True
+                    transaction.lastModified = timezone.now()
+                    transaction.save()
+                data = {
+                    "lastModified": timezone.now(),
+                    "isDeleted": True
+                }
+
+                serializer = AccountSerializer(self.accounts[0], data=data, partial=True)
+
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response(status=status.HTTP_200_OK)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(statusMessage, status=status.HTTP_404_NOT_FOUND)
+
 class TransactionAPIView(APIView):
 
     def __init__(self):
@@ -115,6 +141,7 @@ class TransactionAPIView(APIView):
             #account in model.Transaction is id in model.Account
             query = {'id': account}
             statusMessage = self.getAccount(query)
+
             if statusMessage != True:
                 return statusMessage
             self.transactions = self.transactions.filter(account=self.account)
@@ -123,60 +150,67 @@ class TransactionAPIView(APIView):
             return NO_SUCH_TRANSACTION_FOUND
         return True
 
-    def getClosingBalance(self, accountId, newAmountSpent, oldAmountSpent = 0):
-        querySet = {"id": accountId}
-        statusMessage = self.getAccount(querySet)
-        if statusMessage == True:
-            closingBalance = self.account.currentBalance - newAmountSpent + oldAmountSpent
-            if closingBalance >= 0:
-                return True, closingBalance
-            return NOT_ENOUGH_BALANCE, None
-        return statusMessage, None
+    def getClosingBalance(self, newAmount, oldAmount = 0):
+        closingBalance = self.account.currentBalance + newAmount - oldAmount
+        if closingBalance >= 0:
+            return True, closingBalance
+        return NOT_ENOUGH_BALANCE, None
 
     def updateAllTransactions(self, amount):
         with TRANSACTION.atomic():
             transactions = Transaction.objects.filter(date__gt=self.transactions[0].date)
             for i in transactions:
-                i.closingBalance += amount
+                i.closingBalance -= amount
                 i.lastModified = timezone.now()
                 i.save()
             return True
+        return OPERATION_INCOMPLETE
 
     def get(self, request):
         statusMessage = self.getTransactions(request.query_params)
+
         if statusMessage == True:
             serializer = TransactionSerializer(self.transactions, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
-
         return Response(statusMessage, status=status.HTTP_404_NOT_FOUND)
 
     def post(self, request):
-        statusMessage, closingBalance = self.getClosingBalance(request.data["account"], request.data["amount"])
+        querySet = {"id": request.data["account"]}
+        statusMessage = self.getAccount(querySet)
+        
         if statusMessage == True:
-            self.updateAccount(closingBalance)
-            request.data["closingBalance"] = closingBalance
-            #request.data["account"] = self.account.pk
-            serializer = TransactionSerializer(data = request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        return Response(statusMessage, status=status.HTTP_400_BAD_REQUEST)
+            statusMessageClosingBalance, closingBalance = self.getClosingBalance(request.data["amount"])
+
+            if statusMessageClosingBalance == True:
+                self.updateAccount(closingBalance)
+                request.data["closingBalance"] = closingBalance
+                serializer = TransactionSerializer(data = request.data)
+
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response(serializer.data, status=status.HTTP_201_CREATED)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(statusMessageClosingBalance, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(statusMessage, status=status.HTTP_404_NOT_FOUND)
 
     def put(self, request):
         querySet = {"id": request.data["id"]}
         statusMessage = self.getTransactions(querySet)
 
         if statusMessage == True:
-            statusMessageClosingBalance, closingBalance = self.getClosingBalance(request.data["account"], request.data["amount"], self.transactions[0].amount)
+            self.account = self.transactions[0].account
+            statusMessageClosingBalance, closingBalance = self.getClosingBalance(request.data["amount"], self.transactions[0].amount)
+
             if statusMessageClosingBalance == True:
                 self.updateAccount(closingBalance)
                 amount = self.transactions[0].amount - request.data["amount"]
                 flag = self.updateAllTransactions(amount)
-                if flag:
-                    request.data["closingBalance"] = self.transactions[0].closingBalance + amount
+
+                if flag == True:
+                    request.data["closingBalance"] = self.transactions[0].closingBalance - amount
                     request.data["lastModified"] = timezone.now()
-                    request.data["account"] = self.transactions[0].account.id
 
                     serializer = TransactionSerializer(self.transactions[0], data=request.data, partial=True)
 
@@ -184,5 +218,38 @@ class TransactionAPIView(APIView):
                         serializer.save()
                         return Response(status=status.HTTP_200_OK)
                     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+                return Response(flag, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
             return Response(statusMessageClosingBalance, status=status.HTTP_400_BAD_REQUEST)
-        return Response(statusMessage, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(statusMessage, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request):
+        statusMessage = self.getTransactions(request.query_params)
+
+        if statusMessage == True:
+            self.account = self.transactions[0].account
+            statusMessageClosingBalance, closingBalance = self.getClosingBalance(0, self.transactions[0].amount)
+
+            if statusMessageClosingBalance == True:
+                self.updateAccount(closingBalance)
+                flag = self.updateAllTransactions(self.transactions[0].amount)
+
+                if flag:
+                    data = {
+                        "lastModified": timezone.now(),
+                        "isDeleted": True
+                    }
+                    serializer = TransactionSerializer(self.transactions[0], data=data, partial=True)
+
+                    if serializer.is_valid():
+                        serializer.save()
+                        return Response(status=status.HTTP_200_OK)
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+                return Response(flag, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            return Response(statusMessageClosingBalance, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(statusMessage, status=status.HTTP_404_NOT_FOUND)
