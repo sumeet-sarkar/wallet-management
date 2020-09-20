@@ -25,7 +25,6 @@ class AccountAPIView(APIView):
 
     def getAccounts(self, querySet):
         self.accounts = Account.objects.all()
-
         id = querySet.get('id', None)
         phone = querySet.get('phone', None)
         accountNumber = querySet.get('accountNumber', None)
@@ -66,14 +65,22 @@ class AccountAPIView(APIView):
         return Response(statusMessage, status=status.HTTP_404_NOT_FOUND)
 
     def post(self, request):
-        querySet = {"accountNumber": request.data["accountNumber"]}
 
         #checking if duplicate
-        statusMessage = self.getAccounts(querySet)
+        statusMessage = self.getAccounts( {"accountNumber": request.data["accountNumber"]} )
+        data = {
+            "accountNumber": request.data["accountNumber"],
+            "bank": request.data["bank"],
+            "currentBalance": request.data["currentBalance"],
+            "email": request.data["email"],
+            "phone": request.data["phone"],
+            "date": request.data.get("date", timezone.now())
+        }
+
         if statusMessage == True:
             return Response(DUPLICATE_ACCOUNT, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = AccountSerializer(data=request.data)
+        serializer = AccountSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -121,8 +128,8 @@ class TransactionAPIView(APIView):
         self.account = accountObj.accounts[0]
         return statusMessage
 
-    def updateAccount(self, closingBalance):
-        self.account.currentBalance = closingBalance
+    def updateAccount(self, currentBalance):
+        self.account.currentBalance = currentBalance
         self.account.lastModified = timezone.now()
         self.account.save()
 
@@ -151,7 +158,7 @@ class TransactionAPIView(APIView):
         return True
 
     def getClosingBalance(self, newAmount, oldAmount = 0):
-        closingBalance = self.account.currentBalance + newAmount - oldAmount
+        closingBalance = self.account.currentBalance + float(newAmount) - oldAmount
         if closingBalance >= 0:
             return True, closingBalance
         return NOT_ENOUGH_BALANCE, None
@@ -175,16 +182,23 @@ class TransactionAPIView(APIView):
         return Response(statusMessage, status=status.HTTP_404_NOT_FOUND)
 
     def post(self, request):
-        querySet = {"id": request.data["account"]}
+        data = {
+            "account": request.data["account"],
+            "amount": request.data["amount"],
+            "reason": request.data["reason"],
+            "isCredited": request.data["isCredited"]
+        }
+        querySet = {"id": data["account"]}
         statusMessage = self.getAccount(querySet)
         
         if statusMessage == True:
-            statusMessageClosingBalance, closingBalance = self.getClosingBalance(request.data["amount"])
+            statusMessageClosingBalance, closingBalance = self.getClosingBalance(data["amount"])
 
             if statusMessageClosingBalance == True:
                 self.updateAccount(closingBalance)
-                request.data["closingBalance"] = closingBalance
-                serializer = TransactionSerializer(data = request.data)
+                data["closingBalance"] = closingBalance
+                data["account"] = self.account.pk
+                serializer = TransactionSerializer(data = data)
 
                 if serializer.is_valid():
                     serializer.save()
@@ -196,23 +210,28 @@ class TransactionAPIView(APIView):
         return Response(statusMessage, status=status.HTTP_404_NOT_FOUND)
 
     def put(self, request):
-        querySet = {"id": request.data["id"]}
+        data = {
+            "id": request.data["id"],
+            "amount": request.data["amount"],
+            "reason": request.data["reason"]
+        }
+        querySet = {"id": data["id"]}
         statusMessage = self.getTransactions(querySet)
 
         if statusMessage == True:
             self.account = self.transactions[0].account
-            statusMessageClosingBalance, closingBalance = self.getClosingBalance(request.data["amount"], self.transactions[0].amount)
+            statusMessageClosingBalance, closingBalance = self.getClosingBalance(data["amount"], self.transactions[0].amount)
 
             if statusMessageClosingBalance == True:
-                self.updateAccount(closingBalance)
-                amount = self.transactions[0].amount - request.data["amount"]
+                amount = self.transactions[0].amount - float(data["amount"])
+                self.updateAccount(self.account.currentBalance - amount)
                 flag = self.updateAllTransactions(amount)
 
                 if flag == True:
-                    request.data["closingBalance"] = self.transactions[0].closingBalance - amount
-                    request.data["lastModified"] = timezone.now()
+                    data["closingBalance"] = self.transactions[0].closingBalance - amount
+                    data["lastModified"] = timezone.now()
 
-                    serializer = TransactionSerializer(self.transactions[0], data=request.data, partial=True)
+                    serializer = TransactionSerializer(self.transactions[0], data=data, partial=True)
 
                     if serializer.is_valid():
                         serializer.save()
